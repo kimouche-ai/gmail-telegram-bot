@@ -1,50 +1,75 @@
-import os
 import time
 import imaplib
 import email
+import os
 import requests
 
-EMAIL_ACCOUNT = os.environ["GMAIL_USER"]
-EMAIL_PASSWORD = os.environ["GMAIL_PASSWORD"]
-TELEGRAM_TOKEN = os.environ["TELEGRAM_TOKEN"]
-TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
+# معلومات من المتغيرات السرية
+GMAIL_USER = os.getenv("GMAIL_USER")
+GMAIL_PASSWORD = os.getenv("GMAIL_PASSWORD")
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-def check_email():
+# الاتصال بـ Gmail
+def connect_to_gmail():
     mail = imaplib.IMAP4_SSL("imap.gmail.com")
-    mail.login(EMAIL_ACCOUNT, EMAIL_PASSWORD)
+    mail.login(GMAIL_USER, GMAIL_PASSWORD)
     mail.select("inbox")
+    return mail
 
-    result, data = mail.search(None, "UNSEEN")
-    ids = data[0]
-    id_list = ids.split()
+# جلب آخر رسالة
+def get_latest_email(mail):
+    status, messages = mail.search(None, "UNSEEN")
+    if status != "OK":
+        return None
 
-    for num in id_list:
-        result, data = mail.fetch(num, "(RFC822)")
-        raw_email = data[0][1]
-        msg = email.message_from_bytes(raw_email)
+    for num in messages[0].split():
+        status, data = mail.fetch(num, "(RFC822)")
+        if status != "OK":
+            continue
+        msg = email.message_from_bytes(data[0][1])
 
+        # معلومات عامة
         subject = msg["subject"]
         from_ = msg["from"]
 
+        # جلب المحتوى
         body = ""
         if msg.is_multipart():
             for part in msg.walk():
                 if part.get_content_type() == "text/plain":
-                    body = part.get_payload(decode=True).decode()
-                    break
+                    try:
+                        body = part.get_payload(decode=True).decode(errors="ignore")
+                    except:
+                        body = "[غير قابل للقراءة]"
         else:
-            body = msg.get_payload(decode=True).decode()
+            try:
+                body = msg.get_payload(decode=True).decode(errors="ignore")
+            except:
+                body = "[غير قابل للقراءة]"
 
-        text = f"📧 New Email\nFrom: {from_}\nSubject: {subject}\n\n{body[:500]}"
+        return f"📧 **New Email**\nFrom: {from_}\nSubject: {subject}\n\n{body[:500]}"
 
-        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-        requests.post(url, json={"chat_id": TELEGRAM_CHAT_ID, "text": text})
+    return None
 
-        mail.store(num, '+FLAGS', '\\Seen')
+# إرسال لتليغرام
+def send_to_telegram(message):
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    data = {"chat_id": TELEGRAM_CHAT_ID, "text": message}
+    requests.post(url, data=data)
 
-    mail.logout()
+# حلقة العمل
+def main():
+    while True:
+        try:
+            mail = connect_to_gmail()
+            message = get_latest_email(mail)
+            if message:
+                send_to_telegram(message)
+            mail.logout()
+        except Exception as e:
+            print("Error:", e)
+        time.sleep(60)
 
 if __name__ == "__main__":
-    while True:
-        check_email()
-        time.sleep(60)
+    main()
