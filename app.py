@@ -3,8 +3,21 @@ import imaplib
 import email
 import os
 import requests
+import socket
+import threading
 
-# معلومات من المتغيرات السرية
+# نفتح بورت وهمي باش Render يقبل الخدمة
+def fake_server():
+    s = socket.socket()
+    s.bind(('0.0.0.0', int(os.environ.get("PORT", 10000))))
+    s.listen(1)
+    while True:
+        conn, addr = s.accept()
+        conn.close()
+
+threading.Thread(target=fake_server, daemon=True).start()
+
+# معلومات من المتغيرات
 GMAIL_USER = os.getenv("GMAIL_USER")
 GMAIL_PASSWORD = os.getenv("GMAIL_PASSWORD")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
@@ -29,11 +42,9 @@ def get_latest_email(mail):
             continue
         msg = email.message_from_bytes(data[0][1])
 
-        # معلومات عامة
         subject = msg["subject"]
         from_ = msg["from"]
 
-        # جلب المحتوى
         body = ""
         if msg.is_multipart():
             for part in msg.walk():
@@ -48,7 +59,7 @@ def get_latest_email(mail):
             except:
                 body = "[غير قابل للقراءة]"
 
-        return f"📧 **New Email**\nFrom: {from_}\nSubject: {subject}\n\n{body[:500]}"
+        return f"📧 New Email\nFrom: {from_}\nSubject: {subject}\n\n{body[:500]}"
 
     return None
 
